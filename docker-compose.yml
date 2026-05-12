@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gastroflow_postgres
+    environment:
+      POSTGRES_USER: gastroflow_user
+      POSTGRES_PASSWORD: gastroflow_pass
+      POSTGRES_DB: gastroflow
+    ports:
+      - "25432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: gastroflow_redis
+    ports:
+      - "26379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: gastroflow_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: gastroflow
+      RABBITMQ_DEFAULT_PASS: gastroflow_pass
+    ports:
+      - "25672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gastroflow_api
+    environment:
+      NODE_ENV: production
+      PORT: 23001
+      DATABASE_URL: postgres://gastroflow_user:gastroflow_pass@postgres:5432/gastroflow
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://gastroflow:gastroflow_pass@rabbitmq:5672
+      JWT_SECRET: supersecretjwtkey
+      JWT_EXPIRES_IN: 1d
+      REFRESH_TOKEN_SECRET: refreshsecretkey
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      ADMIN_EMAIL: admin@gastroflow.com
+      ADMIN_PASSWORD: changeme123
+      MEDIA_UPLOAD_PATH: /uploads
+      MEDIA_BASE_URL: http://localhost:23001/uploads
+      BRAND_PRIMARY_COLOR: "#E67E22"
+    ports:
+      - "23001:23001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gastroflow_frontend
+    environment:
+      NODE_ENV: production
+      VITE_API_BASE_URL: http://localhost:23001
+      FRONTEND_PORT: 24000
+    ports:
+      - "24000:24000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  uploads_data:
